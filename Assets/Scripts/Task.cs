@@ -23,6 +23,7 @@ public class Task : MonoBehaviour {
     }
 
     public void PlayMiniGame() {
+        Debug.Log("Mini game started");
         miniGame.SetActive(true);
     }
 }

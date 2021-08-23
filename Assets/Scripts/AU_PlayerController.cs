@@ -1,15 +1,19 @@
+using Photon.Pun;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using System.IO;
 
-public class AU_PlayerController : MonoBehaviour {
+public class AU_PlayerController : MonoBehaviour, IPunObservable {
     //Fields
     [SerializeField] bool hasControl;
     public static AU_PlayerController localPlayer;
     Rigidbody auRigidbody;
     Transform avatar;
     Animator animator;
+
+    float direction = 1;
 
     //Color Stuff
     static Color playerColor;
@@ -39,9 +43,23 @@ public class AU_PlayerController : MonoBehaviour {
     // Interactions
     [SerializeField] InputAction MOUSE;
     Vector2 mousePositionInput;
-    Camera myCamera;
+    [SerializeField] Camera myCamera;
     [SerializeField] InputAction INTERACTION;
     [SerializeField] LayerMask interactionLayer;
+
+    // Networking
+    PhotonView myPV;
+    [SerializeField] GameObject lightMask;
+    [SerializeField] AU_LightCaster myLightCaster;
+
+    public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info) {
+        if(stream.IsWriting) {
+            stream.SendNext(direction);
+        }
+        else {
+            direction = (float)stream.ReceiveNext();
+        }
+    }
 
     private void Awake() {
         KILL.performed += KillTarget;
@@ -73,6 +91,7 @@ public class AU_PlayerController : MonoBehaviour {
         if(other.tag == "Player") {
             AU_PlayerController tmpTarget = other.GetComponent<AU_PlayerController>();
             if(isImposter && !tmpTarget.isImposter) {
+                Debug.Log("Added to targets");
                 targets.Add(tmpTarget);
             }
         }
@@ -82,6 +101,7 @@ public class AU_PlayerController : MonoBehaviour {
         if(other.tag == "Player") {
             AU_PlayerController tmpTarget = other.GetComponent<AU_PlayerController>();
             if(targets.Contains(tmpTarget)) {
+                Debug.Log("Removed from targets");
                 targets.Remove(tmpTarget);
             }
         }
@@ -89,7 +109,8 @@ public class AU_PlayerController : MonoBehaviour {
 
     // Kills the nearest crew member
     void KillTarget(InputAction.CallbackContext context) {
-        if(context.phase == InputActionPhase.Performed && targets.Count > 0) {
+        Debug.Log("Kill attempted.");
+        if(myPV.IsMine && isImposter && context.phase == InputActionPhase.Performed && targets.Count > 0) {
             //Order the list by the distance to the killer
             targets.Sort((entry1, entry2)=> Vector3.Distance(entry1.transform.position, transform.position).CompareTo(Vector3.Distance(entry2.transform.position, transform.position)));
             //Loop through the list and kill the nearest person who is alive.
@@ -97,20 +118,30 @@ public class AU_PlayerController : MonoBehaviour {
                 AU_PlayerController target = targets[i];
                 if(!target.isDead) {
                     transform.position = target.transform.position;
-                    target.Die();
+                    target.myPV.RPC("RPC_Kill", RpcTarget.All);
+                    Debug.Log("Send Kill Command");
                     break;
                 }
             }
         }
     }
 
+    [PunRPC]
+    void RPC_Kill() {
+        Debug.Log("Recieved Kill Command");
+        Die();
+    }
+
     public void Die() {
-        isDead = true;
-        animator.SetBool("isDead", isDead);
-        auCollider.enabled = false;
-        AU_Body tmpBody = Instantiate(bodyPrefab, transform.position, transform.rotation).GetComponent<AU_Body>();
-        tmpBody.SetColor(spriteRenderer.color);
-        gameObject.layer = 8;
+        if(myPV.IsMine) {
+            isDead = true;
+            animator.SetBool("isDead", isDead);
+            auCollider.enabled = false;
+            AU_Body tmpBody = PhotonNetwork.Instantiate(Path.Combine("PhotonPrefabs", "AU Body"), transform.position, transform.rotation).GetComponent<AU_Body>();
+            tmpBody.SetColor(spriteRenderer.color);
+            gameObject.layer = 8;
+            Debug.Log("Die complete");
+        }
     }
 
     void BodySearch() {
@@ -145,52 +176,62 @@ public class AU_PlayerController : MonoBehaviour {
         if(context.phase == InputActionPhase.Performed) {
             RaycastHit hit;
             Ray ray = myCamera.ScreenPointToRay(mousePositionInput);
-            if(Physics.Raycast(ray, out hit, interactionLayer) && hit.transform.tag == "Task" && hit.transform.GetChild(0).gameObject.activeInHierarchy) {
+            if(Physics.Raycast(ray, out hit, interactionLayer) && hit.transform.tag == "Task") {
                 Task tmp = hit.transform.GetComponent<Task>();
                 tmp.PlayMiniGame();
             }
         }
     }
 
-    // Start is called before the first frame update
+    // Start is called before the first frame update 
     void Start() {
-        if(hasControl) {
-            localPlayer = this;
-        }
         auRigidbody = GetComponent<Rigidbody>();
         avatar = transform.GetChild(0);
         animator = GetComponent<Animator>();
         spriteRenderer = avatar.GetComponent<SpriteRenderer>();
         targets = new List<AU_PlayerController>();
-        if(playerColor == Color.clear) {
-            playerColor = Color.white;
-        }
-        if(hasControl) {
-            spriteRenderer.color = playerColor;
-        }
 
-        allBodies = new List<Transform>();
-        bodiesFound = new List<Transform>();
+        myPV = GetComponent<PhotonView>();
+        if(myPV.IsMine) {
+            localPlayer = this;
+            if(playerColor == Color.clear) {
+                playerColor = Color.white;
+            }
+            spriteRenderer.color = playerColor;
+            if(allBodies == null) {
+                allBodies = new List<Transform>();
+            }
+            bodiesFound = new List<Transform>();
+        }
+        else {
+            myCamera.gameObject.SetActive(false);
+            lightMask.SetActive(false);
+            myLightCaster.enabled = false;
+        }
+        
     }
 
     // Update is called once per frame
     void Update() {
-        if(hasControl) {
+        avatar.localScale = new Vector2(direction, 1);
+        if(myPV.IsMine) {
             inputMovement = WASD.ReadValue<Vector2>();
-            if(inputMovement.x != 0) {
-                avatar.localScale = new Vector2(Mathf.Sign(inputMovement.x), 1);
-            }
             animator.SetFloat("Speed", inputMovement.magnitude);
+            if(inputMovement.x != 0) {
+                direction = Mathf.Sign(inputMovement.x);
+            }
+            if(allBodies.Count > 0) {
+                BodySearch();
+            }
+            mousePositionInput = MOUSE.ReadValue<Vector2>();
         }
-        if(allBodies.Count > 0) {
-            BodySearch();
-        }
-        mousePositionInput = MOUSE.ReadValue<Vector2>();
     }
 
     //Fixed update handles movement
     private void FixedUpdate() {
-        auRigidbody.velocity = inputMovement * movementSpeed;
+        if(myPV.IsMine) {
+            auRigidbody.velocity = inputMovement * movementSpeed;
+        }
     }
 
     public void SetColor(Color newColor) {

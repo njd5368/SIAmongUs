@@ -5,10 +5,13 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/Lobby.unity
     guid: 18d864915b950d6148a0ccac96212513
   - enabled: 1
-    path: Assets/Scenes/SampleScene.unity
+    path: Assets/Scenes/Dropship.unity
+    guid: e7c71d2d25ffb5512a982da42c21fbae
+  - enabled: 1
+    path: Assets/Scenes/Skeld.unity
     guid: 2cda990e2423bbf4892e6590ba056729
   m_configObjects: {}

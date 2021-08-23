@@ -7,8 +7,8 @@ public class AU_LightCaster : MonoBehaviour {
     // Objects to ignore
     [SerializeField] LayerMask walls;
 
-    // The object for the map walls. (Create this in Blender as one object and put it in here.)
-    [SerializeField] GameObject mapObject;
+    // The object for the map walls. (Create this in Blender as one object and put it in the scene with tag "Wall".)
+    GameObject mapObject;
 
     // The offset that you want to change the raycasts by
     private float offset = 0.01f;
@@ -20,6 +20,7 @@ public class AU_LightCaster : MonoBehaviour {
     // Start is called before the first frame update
     void Start() {
         this.mesh = lightRays.GetComponent<MeshFilter>().mesh;
+        this.mapObject = GameObject.FindWithTag("Wall");
     }
 
     // Update is called once per frame
